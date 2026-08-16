@@ -1,6 +1,6 @@
 package a6protocol
 
-const a6EpochOfsset = 1262304000 // A6 epoch starts at 2010-01-01 00:00:00 UTC, which is 1262304000 seconds
+const a6EpochOffset = 1262304000 // A6 epoch starts at 2010-01-01 00:00:00 UTC, which is 1262304000 seconds
 
 type IndicateData struct {
 	UserSlot   *int
@@ -24,7 +24,7 @@ func ParseIndicate(data []byte) (IndicateData, bool) {
 
 	if len(data) >= offset+4 {
 		rawTimestamp := uint32(data[offset])<<24 | uint32(data[offset+1])<<16 | uint32(data[offset+2])<<8 | uint32(data[offset+3])
-		deviceTime := rawTimestamp + a6EpochOfsset
+		deviceTime := rawTimestamp + a6EpochOffset
 		result.DeviceTime = &deviceTime
 		offset += 4
 	}
