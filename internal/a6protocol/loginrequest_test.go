@@ -33,14 +33,15 @@ func TestParseLoginRequest_TooShort(t *testing.T) {
 }
 
 func TestParseLoginRequest_ClampsInvalidUserSlot(t *testing.T) {
-	// header(4) + randomBytes(6) + userSlot(1) + batteryLevel(1) = 12 bytes
-	data, _ := hex.DecodeString("1012000700000000000003c00000000000000000")
+	// header(4) + randomBytes(6, arbitrary) + rawSlot=0x0C(12, out of 0-8) + battery(0x50)
+	data, _ := hex.DecodeString("10120007aaaaaaaaaaaa0c50")
 
 	got, ok := ParseLoginRequest(data)
+
 	if !ok {
-		t.Fatalf("ParseLoginRequest returned ok=false, want true")
+		t.Fatalf("ParseLoginRequest(...) returned ok=false, want true")
 	}
-	if got.UserSlot != 3 {
-		t.Errorf("UserSlot = %d, want 3", got.UserSlot)
+	if got.UserSlot != 0 {
+		t.Errorf("UserSlot = %d, want 0 (clamped from out-of-range raw value)", got.UserSlot)
 	}
 }

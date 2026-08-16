@@ -22,6 +22,10 @@ func ParseLoginRequest(data []byte) (LoginRequest, bool) {
 	userSlot := int(data[headerLength+randomBytesLength])
 	batteryLevel := int(data[headerLength+randomBytesLength+userSlotLength])
 
+	if userSlot < 0 || userSlot > 8 {
+		userSlot = 0 // Clamp to 0 if out of range
+	}
+
 	return LoginRequest{
 		RandomBytes:  randomBytes,
 		UserSlot:     userSlot,
