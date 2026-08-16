@@ -11,6 +11,9 @@ const (
 	userSlotLength     = 1
 	batteryLevelLength = 1
 	loginRequestLength = headerLength + randomBytesLength + userSlotLength + batteryLevelLength
+
+	maxUserSlot     = 8
+	maxBatteryLevel = 100
 )
 
 func ParseLoginRequest(data []byte) (LoginRequest, bool) {
