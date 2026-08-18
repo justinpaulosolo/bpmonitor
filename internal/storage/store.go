@@ -28,6 +28,10 @@ type Store struct {
 	db *sql.DB
 }
 
+type rowScanner interface {
+	Scan(dest ...any) error
+}
+
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -84,28 +88,13 @@ func (s *Store) SaveReading(r a6session.Reading, t time.Time) (int64, error) {
 
 func (s *Store) GetReading(id int64) (*StoredReading, error) {
 	row := s.db.QueryRow(`SELECT id, recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, review_status FROM readings WHERE id = ?`, id)
-	var r StoredReading
-	var recordedAt time.Time
-	err := row.Scan(
-		&r.ID,
-		&recordedAt,
-		&r.Systolic,
-		&r.Diastolic,
-		&r.MeanPressure,
-		&r.Pulse,
-		&r.Status,
-		&r.UserSlot,
-		&r.DeviceTime,
-		&r.SessionType,
-		&r.ReviewStatus,
-	)
+	r, err := scanReading(row)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, err
 	}
-	r.RecordedAt = recordedAt.Unix()
 	return &r, nil
 }
 
@@ -118,25 +107,10 @@ func (s *Store) GetReadings() ([]StoredReading, error) {
 
 	var readings []StoredReading
 	for rows.Next() {
-		var r StoredReading
-		var recordedAt time.Time
-		err := rows.Scan(
-			&r.ID,
-			&recordedAt,
-			&r.Systolic,
-			&r.Diastolic,
-			&r.MeanPressure,
-			&r.Pulse,
-			&r.Status,
-			&r.UserSlot,
-			&r.DeviceTime,
-			&r.SessionType,
-			&r.ReviewStatus,
-		)
+		r, err := scanReading(rows)
 		if err != nil {
 			return nil, err
 		}
-		r.RecordedAt = recordedAt.Unix()
 		readings = append(readings, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -154,25 +128,10 @@ func (s *Store) GetPendingReadings(sessionType string) ([]StoredReading, error) 
 
 	var readings []StoredReading
 	for rows.Next() {
-		var r StoredReading
-		var recordedAt time.Time
-		err := rows.Scan(
-			&r.ID,
-			&recordedAt,
-			&r.Systolic,
-			&r.Diastolic,
-			&r.MeanPressure,
-			&r.Pulse,
-			&r.Status,
-			&r.UserSlot,
-			&r.DeviceTime,
-			&r.SessionType,
-			&r.ReviewStatus,
-		)
+		r, err := scanReading(rows)
 		if err != nil {
 			return nil, err
 		}
-		r.RecordedAt = recordedAt.Unix()
 		readings = append(readings, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -224,4 +183,18 @@ func SessionTypeFor(t time.Time) string {
 		return "night"
 	}
 	return "morning"
+}
+
+func scanReading(row rowScanner) (StoredReading, error) {
+	var r StoredReading
+	var recordedAt time.Time
+	err := row.Scan(
+		&r.ID, &recordedAt, &r.Systolic, &r.Diastolic, &r.MeanPressure,
+		&r.Pulse, &r.Status, &r.UserSlot, &r.DeviceTime, &r.SessionType, &r.ReviewStatus,
+	)
+	if err != nil {
+		return StoredReading{}, err
+	}
+	r.RecordedAt = recordedAt.Unix()
+	return r, nil
 }
