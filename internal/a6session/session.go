@@ -10,6 +10,18 @@ const a6EpochOffset = 1262304000
 
 type WriteFunc func(characteristic string, data []byte) error
 
+/*
+NOTES:
+1. Device sends login request (cmd 0x0007) -> HandleDataNotify acks it, replies with
+cmd 0x0008 (echoing the randome bytes), set step = 1
+2. Device acks -> HandleAckNotify at step 1 sends set-time (cmd 0x1102), set step = 2
+3. Device acks again -> HandleAckNotify at step 2 requests sync (cmd 0x4901), set step = 3
+4. Device sends measurement (cmd 0x4902) -> stored in s.partial. If it has a follow-up flag,
+it waits for the indicate frame; otherwise it returns the reading immediately.
+5. The indicate frame arrives -> HandleIndicate combines the partial measurement with the user slot +
+timestamp and returns the final Reading.
+*/
+
 type Session struct {
 	write    WriteFunc
 	now      func() time.Time
