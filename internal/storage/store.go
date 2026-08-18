@@ -186,6 +186,38 @@ func (s *Store) DeleteReading(id int64) error {
 	return err
 }
 
+func (s *Store) CommitReadings(ids []int64, sessionType string) (err error) {
+	if len(ids) != 3 {
+		return fmt.Errorf("expected 3 ids to commit, got %d", len(ids))
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Commit the specified readings
+	for _, id := range ids {
+		_, err = tx.Exec(`UPDATE readings SET review_status = 'committed' WHERE id = ?`, id)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Delete the rest of the readings for the session type
+	_, err = tx.Exec(`DELETE FROM readings WHERE session_type = ? AND review_status = 'pending'`, sessionType)
+	if err != nil {
+		return err
+	}
+
+	err = tx.Commit()
+	return
+}
+
 func SessionTypeFor(t time.Time) string {
 	t = t.Local()
 	if t.Hour() < 6 {
