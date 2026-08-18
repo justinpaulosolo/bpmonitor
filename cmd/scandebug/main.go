@@ -7,6 +7,7 @@ import (
 
 	"github.com/justinpaulosolo/bpmonitor/internal/a6session"
 	"github.com/justinpaulosolo/bpmonitor/internal/ble"
+	"github.com/justinpaulosolo/bpmonitor/internal/storage"
 	"tinygo.org/x/bluetooth"
 )
 
@@ -31,12 +32,19 @@ func main() {
 		return
 	}
 
+	store, err := storage.Open("bpmonitor.db")
+	if err != nil {
+		fmt.Println("failed to open storage:", err)
+		return
+	}
+	defer store.Close()
+
 	fmt.Println("Scanning for a device with", deviceNameHint, "in its name....")
 
 	// creates buffered channel holding at most one found device
 	result := make(chan found, 1)
 
-	err := adapter.Scan(func(a *bluetooth.Adapter, r bluetooth.ScanResult) {
+	err = adapter.Scan(func(a *bluetooth.Adapter, r bluetooth.ScanResult) {
 		name := r.LocalName() // Advertised name
 		if !strings.Contains(name, deviceNameHint) {
 			return
@@ -176,6 +184,12 @@ func main() {
 				}
 				if reading != nil {
 					fmt.Println("Received reading:", *reading)
+					id, err := store.SaveReading(*reading, time.Now())
+					if err != nil {
+						fmt.Println("failed to save reading:", err)
+					} else {
+						fmt.Println("Saved reading with ID:", id)
+					}
 					return
 				}
 			// handles the follow-up frame with user slot + timestamp
@@ -186,7 +200,12 @@ func main() {
 					continue
 				}
 				if reading != nil {
-					//fmt.Println("Received reading:", *reading)
+					id, err := store.SaveReading(*reading, time.Now())
+					if err != nil {
+						fmt.Println("failed to save reading:", err)
+					} else {
+						fmt.Println("Saved reading with ID:", id)
+					}
 					fmt.Printf("systolic=%d userSlot=%d deviceTime=%d\n", reading.Systolic, *reading.UserSlot, *reading.DeviceTime)
 					return
 				}
