@@ -32,15 +32,15 @@ func NewSession(write WriteFunc, key []byte, now func() time.Time) *Session {
 	}
 }
 
-func (s *Session) HandleDataNotify(data []byte) error {
+func (s *Session) HandleDataNotify(data []byte) (*Reading, error) {
 	decrypted, err := a6protocol.DecryptFrame(data, s.key)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	// cmd bytes 2-3 of decrypted data indicate the command type
 
 	if len(decrypted) < 4 {
-		return nil // ignore invalid data
+		return nil, nil // ignore invalid data
 	}
 
 	cmd := decrypted[2:4]
@@ -50,14 +50,14 @@ func (s *Session) HandleDataNotify(data []byte) error {
 		// Login request
 		loginReq, ok := a6protocol.ParseLoginRequest(decrypted)
 		if !ok {
-			return nil // ignore invalid login request
+			return nil, nil // ignore invalid login request
 		}
 
 		s.userSlot = loginReq.UserSlot
 
 		err := s.write(CharAck, []byte{0x00, 0x01, 0x01}) // send ack
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		responsePayload := []byte{0x01}
@@ -68,24 +68,48 @@ func (s *Session) HandleDataNotify(data []byte) error {
 
 		encrypted, err := a6protocol.EncryptFrame(plain, s.key)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		err = s.write(CharCommand, encrypted)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		s.step = 1
+	case cmd[0] == 0x49 && cmd[1] == 0x02:
+		measurement, ok := a6protocol.ParseMeasurement(decrypted)
+		if !ok {
+			return nil, nil
+		}
+
+		err := s.write(CharAck, []byte{0x00, 0x01, 0x01})
+		if err != nil {
+			return nil, err
+		}
+		s.partial = &measurement
+
+		if measurement.NeedsFollowUp {
+			return nil, nil
+		}
+		return &Reading{
+			Systolic:     measurement.Systolic,
+			Diastolic:    measurement.Diastolic,
+			MeanPressure: measurement.MeanPressure,
+			Pulse:        measurement.Pulse,
+			Status:       measurement.Status,
+			UserSlot:     nil,
+			DeviceTime:   nil,
+		}, nil
 	}
 
-	return nil
+	return nil, nil
 }
 
-func (s *Session) HandleAckNotify(data []byte) error {
+func (s *Session) HandleAckNotify(data []byte) (*Reading, error) {
 	err := s.write(CharAck, []byte{0x00, 0x01, 0x01}) // send ack
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	switch s.step {
@@ -99,12 +123,12 @@ func (s *Session) HandleAckNotify(data []byte) error {
 		frame := a6protocol.Frame(0x1102, payload)
 		encrypted, err := a6protocol.EncryptFrame(frame, s.key)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		err = s.write(CharCommand, encrypted)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		s.step = 2
 
@@ -114,17 +138,49 @@ func (s *Session) HandleAckNotify(data []byte) error {
 		frame := a6protocol.Frame(0x4901, payload)
 		encrypted, err := a6protocol.EncryptFrame(frame, s.key)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		err = s.write(CharCommand, encrypted)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		s.step = 3
 
 	default:
 		// Handle other steps or ignore
 	}
-	return nil
+	return nil, nil
+}
+
+func (s *Session) HandleIndicate(data []byte) (*Reading, error) {
+	if s.partial == nil {
+		return nil, nil
+	}
+
+	decrypted, err := a6protocol.DecryptFrame(data, s.key)
+	if err != nil {
+		return nil, err
+	}
+
+	indicate, ok := a6protocol.ParseIndicate(decrypted)
+	if !ok {
+		return nil, nil
+	}
+
+	err = s.write(CharAck, []byte{0x00, 0x01, 0x01})
+	if err != nil {
+		return nil, err
+	}
+	reading := &Reading{
+		Systolic:     s.partial.Systolic,
+		Diastolic:    s.partial.Diastolic,
+		MeanPressure: s.partial.MeanPressure,
+		Pulse:        s.partial.Pulse,
+		Status:       s.partial.Status,
+		UserSlot:     indicate.UserSlot,
+		DeviceTime:   indicate.DeviceTime,
+	}
+	s.partial = nil
+	return reading, nil
 }

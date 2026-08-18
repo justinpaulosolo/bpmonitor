@@ -26,7 +26,7 @@ func TestHandleDataNotify_LoginRequest(t *testing.T) {
 	}
 
 	session := NewSession(fakeWrite, key, time.Now) // time doesn't matter for this path
-	err := session.HandleDataNotify(incomming)
+	_, err := session.HandleDataNotify(incomming)
 	if err != nil {
 		t.Fatalf("HandleDataNotify( ... ) returned an error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestHandleAckNotify_StepTwo_SendsSyncRequest(t *testing.T) {
 	session.step = 2
 	session.userSlot = 2
 
-	err := session.HandleAckNotify(incoming)
+	_, err := session.HandleAckNotify(incoming)
 	if err != nil {
 		t.Fatalf("HandleAckNotify(...) returned error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestHandleAckNotify_StepOne_SendsSetTime(t *testing.T) {
 	session := NewSession(fakeWrite, key, fakeNow)
 	session.step = 1
 
-	err := session.HandleAckNotify(incoming)
+	_, err := session.HandleAckNotify(incoming)
 	if err != nil {
 		t.Fatalf("HandleAckNotify(...) returned error: %v", err)
 	}
@@ -164,5 +164,93 @@ func TestHandleAckNotify_StepOne_SendsSetTime(t *testing.T) {
 
 	if session.step != 2 {
 		t.Errorf("session.step = %d, want 2", session.step)
+	}
+}
+
+func TestHandleDataNotify_Measurement_NeedsFollowUp(t *testing.T) {
+	key, _ := hex.DecodeString("5472616e7374656b4136b8b77d120e86")
+	incoming, _ := hex.DecodeString("20124902c4f5aecf77bdc3d9679ed9caf2e77560")
+
+	var calls []recordedWrite
+	fakeWrite := func(characteristic string, data []byte) error {
+		calls = append(calls, recordedWrite{characteristic, data})
+		return nil
+	}
+
+	session := NewSession(fakeWrite, key, time.Now)
+
+	reading, err := session.HandleDataNotify(incoming)
+	if err != nil {
+		t.Fatalf("HandleDataNotify(...) returned error: %v", err)
+	}
+	if reading != nil {
+		t.Fatalf("reading = %+v, want nil (this measurement needs a follow-up indicate frame)", reading)
+	}
+
+	if len(calls) != 1 {
+		t.Fatalf("write called %d times, want 1 (just the ack)", len(calls))
+	}
+	wantAck := recordedWrite{CharAck, []byte{0x00, 0x01, 0x01}}
+	if calls[0].characteristic != wantAck.characteristic || !bytes.Equal(calls[0].data, wantAck.data) {
+		t.Errorf("write = %+v, want %+v", calls[0], wantAck)
+	}
+
+	if session.partial == nil {
+		t.Fatalf("session.partial = nil, want populated")
+	}
+	if session.partial.Systolic != 128 {
+		t.Errorf("partial.Systolic = %d, want 128", session.partial.Systolic)
+	}
+	if session.partial.Diastolic != 85 {
+		t.Errorf("partial.Diastolic = %d, want 85", session.partial.Diastolic)
+	}
+	if session.partial.Pulse != 97 {
+		t.Errorf("partial.Pulse = %d, want 97", session.partial.Pulse)
+	}
+}
+
+func TestHandleIndicate_MergesWithPartial(t *testing.T) {
+	key, _ := hex.DecodeString("5472616e7374656b4136b8b77d120e86")
+	incoming, _ := hex.DecodeString("2112021f0befea2c4c55a33fb2afd65ddf1dfc8e")
+
+	var calls []recordedWrite
+	fakeWrite := func(characteristic string, data []byte) error {
+		calls = append(calls, recordedWrite{characteristic, data})
+		return nil
+	}
+
+	session := NewSession(fakeWrite, key, time.Now)
+	session.partial = &a6protocol.Measurement{
+		Systolic:     128,
+		Diastolic:    85,
+		MeanPressure: 106,
+		Status:       0,
+		Pulse:        97,
+	}
+
+	reading, err := session.HandleIndicate(incoming)
+	if err != nil {
+		t.Fatalf("HandleIndicate(...) returned error: %v", err)
+	}
+	if reading == nil {
+		t.Fatalf("reading = nil, want a completed Reading")
+	}
+
+	if reading.Systolic != 128 || reading.Diastolic != 85 || reading.MeanPressure != 106 || reading.Pulse != 97 {
+		t.Errorf("reading fields = %+v, want the stored partial's values", reading)
+	}
+	if reading.UserSlot == nil || *reading.UserSlot != 2 {
+		t.Errorf("UserSlot = %v, want 2", reading.UserSlot)
+	}
+	if reading.DeviceTime == nil || *reading.DeviceTime != 1786837980 {
+		t.Errorf("DeviceTime = %v, want 1786837980", reading.DeviceTime)
+	}
+
+	if len(calls) != 1 {
+		t.Fatalf("write called %d times, want 1 (just the ack)", len(calls))
+	}
+
+	if session.partial != nil {
+		t.Errorf("session.partial = %+v, want nil after emitting the reading", session.partial)
 	}
 }
