@@ -3,22 +3,23 @@ package tui
 import (
 	"fmt"
 
+	"charm.land/lipgloss/v2"
 	"github.com/justinpaulosolo/bpmonitor/internal/storage"
 )
 
 type readingItem struct {
-	reading storage.StoredReading
-	marked  bool
+	reading  storage.StoredReading
+	rejected bool
 }
 
 func (i readingItem) FilterValue() string { return "" }
 
 func (i readingItem) Title() string {
-	mark := "[ ]"
-	if i.marked {
-		mark = "[x]"
+	text := fmt.Sprintf("#%d  %d/%d  pulse %d", i.reading.ID, i.reading.Systolic, i.reading.Diastolic, i.reading.Pulse)
+	if i.rejected {
+		return lipgloss.NewStyle().Strikethrough(true).Render(text)
 	}
-	return fmt.Sprintf("%s #%d  %d/%d  pulse %d", mark, i.reading.ID, i.reading.Systolic, i.reading.Diastolic, i.reading.Pulse)
+	return text
 }
 
 func (i readingItem) Description() string {

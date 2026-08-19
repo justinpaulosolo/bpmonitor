@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -8,29 +9,40 @@ import (
 	"github.com/justinpaulosolo/bpmonitor/internal/storage"
 )
 
-func TestReadingItem_Title_Unmarked(t *testing.T) {
+var ansiEscape = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string {
+	return ansiEscape.ReplaceAllString(s, "")
+}
+
+func TestReadingItem_Title_NotRejected(t *testing.T) {
 	item := readingItem{
 		reading: storage.StoredReading{
 			ID:      1,
 			Reading: a6session.Reading{Systolic: 120, Diastolic: 80, Pulse: 70},
 		},
-		marked: false,
+		rejected: false,
 	}
-	if !strings.HasPrefix(item.Title(), "[ ]") {
-		t.Errorf("Title() = %q, want prefix %q", item.Title(), "[ ]")
+	want := "#1  120/80  pulse 70"
+	if item.Title() != want {
+		t.Errorf("Title() = %q, want %q", item.Title(), want)
 	}
 }
 
-func TestReadingItem_Title_Marked(t *testing.T) {
+func TestReadingItem_Title_Rejected(t *testing.T) {
 	item := readingItem{
 		reading: storage.StoredReading{
 			ID:      1,
 			Reading: a6session.Reading{Systolic: 120, Diastolic: 80, Pulse: 70},
 		},
-		marked: true,
+		rejected: true,
 	}
-	if !strings.HasPrefix(item.Title(), "[x]") {
-		t.Errorf("Title() = %q, want prefix %q", item.Title(), "[x]")
+	plain := "#1  120/80  pulse 70"
+	if item.Title() == plain {
+		t.Errorf("Title() = %q, want styled (strikethrough) output, different from plain text", item.Title())
+	}
+	if stripANSI(item.Title()) != plain {
+		t.Errorf("Title() with ANSI codes stripped = %q, want %q", stripANSI(item.Title()), plain)
 	}
 }
 

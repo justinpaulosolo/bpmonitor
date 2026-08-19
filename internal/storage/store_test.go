@@ -782,3 +782,122 @@ func TestGetPendingSessions_OrdersByActualTime(t *testing.T) {
 		t.Errorf("pending[1].SessionType = %q, want %q", pending[1].SessionType, "morning")
 	}
 }
+
+func TestGetCommittedReadings_All(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if store == nil {
+		t.Fatal("Open returned nil store")
+	}
+	defer store.Close()
+
+	userSlot := 2
+
+	morningTime := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+	var morningIDs []int64
+	for i := 0; i < 3; i++ {
+		dt := uint32(i + 1)
+		r := a6session.Reading{
+			Systolic: 120 + i, Diastolic: 80 + i, MeanPressure: 93 + i, Pulse: 70 + i, Status: 0,
+			UserSlot: &userSlot, DeviceTime: &dt,
+		}
+		id, err := store.SaveReading(r, morningTime.Add(time.Duration(i)*time.Minute))
+		if err != nil {
+			t.Fatalf("SaveReading(morning %d) returned error: %v", i, err)
+		}
+		morningIDs = append(morningIDs, id)
+	}
+	if err := store.CommitReadings(morningIDs, "morning", "2026-08-18"); err != nil {
+		t.Fatalf("CommitReadings(morning) returned error: %v", err)
+	}
+
+	nightTime := time.Date(2026, 8, 18, 1, 0, 0, 0, time.Local)
+	var nightIDs []int64
+	for i := 0; i < 3; i++ {
+		dt := uint32(i + 10)
+		r := a6session.Reading{
+			Systolic: 130 + i, Diastolic: 85 + i, MeanPressure: 100 + i, Pulse: 75 + i, Status: 0,
+			UserSlot: &userSlot, DeviceTime: &dt,
+		}
+		id, err := store.SaveReading(r, nightTime.Add(time.Duration(i)*time.Minute))
+		if err != nil {
+			t.Fatalf("SaveReading(night %d) returned error: %v", i, err)
+		}
+		nightIDs = append(nightIDs, id)
+	}
+	if err := store.CommitReadings(nightIDs, "night", "2026-08-18"); err != nil {
+		t.Fatalf("CommitReadings(night) returned error: %v", err)
+	}
+
+	committed, err := store.GetCommittedReadings("")
+	if err != nil {
+		t.Fatalf(`GetCommittedReadings("") returned error: %v`, err)
+	}
+	if len(committed) != 6 {
+		t.Fatalf("got %d committed readings, want 6", len(committed))
+	}
+}
+
+func TestGetCommittedReadings_FilteredByType(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if store == nil {
+		t.Fatal("Open returned nil store")
+	}
+	defer store.Close()
+
+	userSlot := 2
+
+	morningTime := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+	var morningIDs []int64
+	for i := 0; i < 3; i++ {
+		dt := uint32(i + 1)
+		r := a6session.Reading{
+			Systolic: 120 + i, Diastolic: 80 + i, MeanPressure: 93 + i, Pulse: 70 + i, Status: 0,
+			UserSlot: &userSlot, DeviceTime: &dt,
+		}
+		id, err := store.SaveReading(r, morningTime.Add(time.Duration(i)*time.Minute))
+		if err != nil {
+			t.Fatalf("SaveReading(morning %d) returned error: %v", i, err)
+		}
+		morningIDs = append(morningIDs, id)
+	}
+	if err := store.CommitReadings(morningIDs, "morning", "2026-08-18"); err != nil {
+		t.Fatalf("CommitReadings(morning) returned error: %v", err)
+	}
+
+	nightTime := time.Date(2026, 8, 18, 1, 0, 0, 0, time.Local)
+	var nightIDs []int64
+	for i := 0; i < 3; i++ {
+		dt := uint32(i + 10)
+		r := a6session.Reading{
+			Systolic: 130 + i, Diastolic: 85 + i, MeanPressure: 100 + i, Pulse: 75 + i, Status: 0,
+			UserSlot: &userSlot, DeviceTime: &dt,
+		}
+		id, err := store.SaveReading(r, nightTime.Add(time.Duration(i)*time.Minute))
+		if err != nil {
+			t.Fatalf("SaveReading(night %d) returned error: %v", i, err)
+		}
+		nightIDs = append(nightIDs, id)
+	}
+	if err := store.CommitReadings(nightIDs, "night", "2026-08-18"); err != nil {
+		t.Fatalf("CommitReadings(night) returned error: %v", err)
+	}
+
+	committed, err := store.GetCommittedReadings("morning")
+	if err != nil {
+		t.Fatalf(`GetCommittedReadings("morning") returned error: %v`, err)
+	}
+	if len(committed) != 3 {
+		t.Fatalf("got %d committed readings, want 3", len(committed))
+	}
+	for _, r := range committed {
+		if r.SessionType != "morning" {
+			t.Errorf("got SessionType=%q, want %q", r.SessionType, "morning")
+		}
+	}
+}

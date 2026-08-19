@@ -221,6 +221,35 @@ func (s *Store) GetPendingSessions() ([]PendingSession, error) {
 	return sessions, nil
 }
 
+func (s *Store) GetCommittedReadings(sessionType string) ([]StoredReading, error) {
+	query := `SELECT id, recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, session_date, review_status FROM readings WHERE review_status = 'committed'`
+	var args []interface{}
+	if sessionType != "" {
+		query += ` AND session_type = ?`
+		args = append(args, sessionType)
+	}
+	query += ` ORDER BY recorded_at`
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var readings []StoredReading
+	for rows.Next() {
+		r, err := scanReading(rows)
+		if err != nil {
+			return nil, err
+		}
+		readings = append(readings, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return readings, nil
+}
+
 func SessionTypeFor(t time.Time) string {
 	t = t.Local()
 	if t.Hour() < 6 {
