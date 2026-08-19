@@ -57,6 +57,16 @@ func TestUpdate_PendingReadingsLoaded(t *testing.T) {
 	if cmd != nil {
 		t.Error("cmd = non-nil, want nil")
 	}
+	if len(updated.list.Items()) != 2 {
+		t.Fatalf("list has %d items, want 2", len(updated.list.Items()))
+	}
+	item, ok := updated.list.Items()[0].(readingItem)
+	if !ok {
+		t.Fatalf("list.Items()[0] is %T, want readingItem", updated.list.Items()[0])
+	}
+	if item.reading.ID != 1 {
+		t.Errorf("list.Items()[0].reading.ID = %d, want 1", item.reading.ID)
+	}
 }
 
 func TestUpdate_QuitKey(t *testing.T) {
@@ -68,5 +78,39 @@ func TestUpdate_QuitKey(t *testing.T) {
 	}
 	if _, ok := cmd().(tea.QuitMsg); !ok {
 		t.Errorf("cmd() = %T, want tea.QuitMsg", cmd())
+	}
+}
+
+func TestUpdate_ReadingsDeleted(t *testing.T) {
+	m := Model{}
+	loaded := pendingReadingsLoadedMsg{
+		{ID: 1, SessionType: "morning", SessionDate: "2026-08-18"},
+		{ID: 2, SessionType: "morning", SessionDate: "2026-08-18"},
+		{ID: 3, SessionType: "morning", SessionDate: "2026-08-18"},
+	}
+	newModel, _ := m.Update(loaded)
+	m = newModel.(Model)
+
+	newModel, cmd := m.Update(readingsDeletedMsg{2})
+	updated := newModel.(Model)
+
+	if len(updated.pending) != 2 {
+		t.Fatalf("pending has %d readings, want 2", len(updated.pending))
+	}
+	for _, r := range updated.pending {
+		if r.ID == 2 {
+			t.Errorf("pending still contains deleted ID 2: %+v", updated.pending)
+		}
+	}
+	if updated.pending[0].ID != 1 || updated.pending[1].ID != 3 {
+		t.Errorf("pending = %+v, want IDs 1 then 3", updated.pending)
+	}
+
+	if len(updated.list.Items()) != 2 {
+		t.Fatalf("list has %d items, want 2", len(updated.list.Items()))
+	}
+
+	if cmd != nil {
+		t.Error("cmd = non-nil, want nil")
 	}
 }
