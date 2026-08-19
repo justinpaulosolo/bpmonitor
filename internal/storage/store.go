@@ -148,6 +148,16 @@ func (s *Store) DeleteReading(id int64) error {
 	return err
 }
 
+func (s *Store) RejectReading(id int64) error {
+	_, err := s.db.Exec(`UPDATE readings SET review_status = 'rejected' WHERE id = ?`, id)
+	return err
+}
+
+func (s *Store) RestoreReading(id int64) error {
+	_, err := s.db.Exec(`UPDATE readings SET review_status = 'pending' WHERE id = ?`, id)
+	return err
+}
+
 func (s *Store) CommitReadings(ids []int64, sessionType string, sessionDate string) (err error) {
 	if len(ids) != 3 {
 		return fmt.Errorf("expected 3 ids to commit, got %d", len(ids))
@@ -182,7 +192,13 @@ func (s *Store) CommitReadings(ids []int64, sessionType string, sessionDate stri
 }
 
 func (s *Store) GetPendingSessions() ([]PendingSession, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT session_type, session_date FROM readings WHERE review_status = 'pending' ORDER BY session_date, session_type`)
+	rows, err := s.db.Query(`
+      SELECT session_type, session_date
+      FROM readings
+      WHERE review_status = 'pending'
+      GROUP BY session_type, session_date
+      ORDER BY MIN(recorded_at)
+	`)
 	if err != nil {
 		return nil, err
 	}

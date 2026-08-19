@@ -345,6 +345,115 @@ func TestDelete(t *testing.T) {
 	}
 }
 
+func TestRejectReading(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if store == nil {
+		t.Fatal("Open returned nil store")
+	}
+	defer store.Close()
+
+	userSlot := 2
+	deviceTime1 := uint32(1)
+
+	morning1 := a6session.Reading{
+		Systolic: 120, Diastolic: 80, MeanPressure: 93, Pulse: 70, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime1,
+	}
+
+	morningTime := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+
+	id, err := store.SaveReading(morning1, morningTime)
+	if err != nil {
+		t.Fatalf("SaveReading(morning1) returned error: %v", err)
+	}
+
+	if err := store.RejectReading(id); err != nil {
+		t.Fatalf("RejectReading returned error: %v", err)
+	}
+
+	r, err := store.GetReading(id)
+	if err != nil {
+		t.Fatalf("GetReading returned error: %v", err)
+	}
+	if r == nil {
+		t.Fatal("GetReading returned nil, want the rejected reading to still exist")
+	}
+	if r.ReviewStatus != "rejected" {
+		t.Errorf("ReviewStatus = %q, want %q", r.ReviewStatus, "rejected")
+	}
+
+	pending, err := store.GetPendingReadings("morning", "2026-08-18")
+	if err != nil {
+		t.Fatalf("GetPendingReadings returned error: %v", err)
+	}
+	for _, p := range pending {
+		if p.ID == id {
+			t.Errorf("rejected reading %d still appears in GetPendingReadings: %+v", id, pending)
+		}
+	}
+}
+
+func TestRestoreReading(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if store == nil {
+		t.Fatal("Open returned nil store")
+	}
+	defer store.Close()
+
+	userSlot := 2
+	deviceTime1 := uint32(1)
+
+	morning1 := a6session.Reading{
+		Systolic: 120, Diastolic: 80, MeanPressure: 93, Pulse: 70, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime1,
+	}
+
+	morningTime := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+
+	id, err := store.SaveReading(morning1, morningTime)
+	if err != nil {
+		t.Fatalf("SaveReading(morning1) returned error: %v", err)
+	}
+	if err := store.RejectReading(id); err != nil {
+		t.Fatalf("RejectReading returned error: %v", err)
+	}
+
+	if err := store.RestoreReading(id); err != nil {
+		t.Fatalf("RestoreReading returned error: %v", err)
+	}
+
+	r, err := store.GetReading(id)
+	if err != nil {
+		t.Fatalf("GetReading returned error: %v", err)
+	}
+	if r == nil {
+		t.Fatal("GetReading returned nil, want the restored reading to still exist")
+	}
+	if r.ReviewStatus != "pending" {
+		t.Errorf("ReviewStatus = %q, want %q", r.ReviewStatus, "pending")
+	}
+
+	pending, err := store.GetPendingReadings("morning", "2026-08-18")
+	if err != nil {
+		t.Fatalf("GetPendingReadings returned error: %v", err)
+	}
+	found := false
+	for _, p := range pending {
+		if p.ID == id {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("restored reading %d does not appear in GetPendingReadings: %+v", id, pending)
+	}
+}
+
 func TestCommitReadings(t *testing.T) {
 	store, err := Open(":memory:")
 	if err != nil {
@@ -623,5 +732,53 @@ func TestGetPendingSessions(t *testing.T) {
 	}
 	if pending[1].SessionType != "morning" || pending[1].SessionDate != "2026-08-19" {
 		t.Errorf("pending[1] = %+v, want {morning 2026-08-19}", pending[1])
+	}
+}
+
+func TestGetPendingSessions_OrdersByActualTime(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if store == nil {
+		t.Fatal("Open returned nil store")
+	}
+	defer store.Close()
+
+	userSlot := 2
+	deviceTime1 := uint32(1)
+	deviceTime2 := uint32(2)
+
+	night := a6session.Reading{
+		Systolic: 130, Diastolic: 85, MeanPressure: 100, Pulse: 75, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime1,
+	}
+	morning := a6session.Reading{
+		Systolic: 120, Diastolic: 80, MeanPressure: 93, Pulse: 70, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime2,
+	}
+
+	nightTime := time.Date(2026, 8, 18, 1, 0, 0, 0, time.Local)
+	morningTime := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+
+	if _, err := store.SaveReading(night, nightTime); err != nil {
+		t.Fatalf("SaveReading(night) returned error: %v", err)
+	}
+	if _, err := store.SaveReading(morning, morningTime); err != nil {
+		t.Fatalf("SaveReading(morning) returned error: %v", err)
+	}
+
+	pending, err := store.GetPendingSessions()
+	if err != nil {
+		t.Fatalf("GetPendingSessions() returned error: %v", err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("got %d pending sessions, want 2", len(pending))
+	}
+	if pending[0].SessionType != "night" {
+		t.Errorf("pending[0].SessionType = %q, want %q, at 1am)", pending[0].SessionType, "night")
+	}
+	if pending[1].SessionType != "morning" {
+		t.Errorf("pending[1].SessionType = %q, want %q", pending[1].SessionType, "morning")
 	}
 }

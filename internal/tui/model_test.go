@@ -37,6 +37,9 @@ func TestUpdate_PendingSessionsLoaded_NonEmpty(t *testing.T) {
 	if cmd == nil {
 		t.Error("cmd = nil, want non-nil")
 	}
+	if len(updated.pendingSessions) != 2 {
+		t.Errorf("pendingSessions has %d entries, want 2", len(updated.pendingSessions))
+	}
 }
 
 func TestUpdate_PendingReadingsLoaded(t *testing.T) {
