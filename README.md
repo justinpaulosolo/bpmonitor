@@ -10,6 +10,8 @@ from a specific consumer medical device. It evolved into a complete, testable
 application with protocol handling, Bluetooth integration, durable storage, and a
 terminal-based review workflow.
 
+![bpmonitor terminal dashboard](assets/dashboard.png)
+
 ## Technical Overview
 
 ### BLE Protocol
