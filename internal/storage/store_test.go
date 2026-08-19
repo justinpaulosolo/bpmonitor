@@ -596,6 +596,64 @@ func TestCommitReadings_WrongCount(t *testing.T) {
 	}
 }
 
+func TestCommitReadings_RejectsInvalidIDsWithoutChangingRows(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	reading := a6session.Reading{Systolic: 120, Diastolic: 80, MeanPressure: 93, Pulse: 70}
+	when := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+	ids := make([]int64, 0, 4)
+	for i := 0; i < 4; i++ {
+		id, saveErr := store.SaveReading(reading, when.Add(time.Duration(i)*time.Minute))
+		if saveErr != nil {
+			t.Fatal(saveErr)
+		}
+		ids = append(ids, id)
+	}
+
+	if err := store.RejectReading(ids[3]); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitReadings([]int64{ids[0], ids[1], ids[3]}, "morning", "2026-08-18"); err == nil {
+		t.Fatal("committing a rejected reading returned nil error")
+	}
+
+	for _, id := range ids[:3] {
+		got, getErr := store.GetReading(id)
+		if getErr != nil {
+			t.Fatal(getErr)
+		}
+		if got.ReviewStatus != "pending" {
+			t.Errorf("reading %d status = %q, want pending", id, got.ReviewStatus)
+		}
+	}
+}
+
+func TestCommitReadings_RejectsDuplicateIDs(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	reading := a6session.Reading{Systolic: 120, Diastolic: 80, MeanPressure: 93, Pulse: 70}
+	when := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+	id1, err := store.SaveReading(reading, when)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := store.SaveReading(reading, when.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitReadings([]int64{id1, id1, id2}, "morning", "2026-08-18"); err == nil {
+		t.Fatal("committing duplicate IDs returned nil error")
+	}
+}
+
 func TestSessionTypeFor(t *testing.T) {
 	// 1am
 	t1 := time.Date(2026, 8, 18, 1, 0, 0, 0, time.Local)

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/justinpaulosolo/bpmonitor/internal/storage"
 )
 
 func TestUpdate_PendingSessionsLoaded_Empty(t *testing.T) {
@@ -69,6 +70,33 @@ func TestUpdate_PendingReadingsLoaded(t *testing.T) {
 	}
 	if item.reading.ID != 1 {
 		t.Errorf("list.Items()[0].reading.ID = %d, want 1", item.reading.ID)
+	}
+}
+
+func TestUpdate_PendingSessionsLoaded_EmptyClearsQueue(t *testing.T) {
+	m := Model{currentSession: &storage.PendingSession{SessionType: "morning", SessionDate: "2026-08-18"}, pending: []storage.StoredReading{{ID: 1}}, listReady: true}
+	newModel, cmd := m.Update(pendingSessionsLoadedMsg{})
+	updated := newModel.(Model)
+	if updated.currentSession != nil || len(updated.pending) != 0 || updated.listReady {
+		t.Fatalf("stale queue state remains: current=%v pending=%v listReady=%v", updated.currentSession, updated.pending, updated.listReady)
+	}
+	if cmd != nil {
+		t.Fatal("cmd = non-nil, want nil")
+	}
+}
+
+func TestUpdate_CommittedReadingsLoaded_IgnoresStaleFilter(t *testing.T) {
+	m := Model{trendsFilter: filterMorning}
+	newModel, cmd := m.Update(committedReadingsLoadedMsg{
+		filter:   filterNight,
+		readings: []storage.StoredReading{{ID: 1}},
+	})
+	updated := newModel.(Model)
+	if len(updated.committed) != 0 {
+		t.Fatalf("committed = %+v, want empty after stale response", updated.committed)
+	}
+	if cmd != nil {
+		t.Fatal("cmd = non-nil, want nil")
 	}
 }
 

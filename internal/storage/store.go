@@ -162,6 +162,13 @@ func (s *Store) CommitReadings(ids []int64, sessionType string, sessionDate stri
 	if len(ids) != 3 {
 		return fmt.Errorf("expected 3 ids to commit, got %d", len(ids))
 	}
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; ok {
+			return fmt.Errorf("duplicate reading id %d", id)
+		}
+		seen[id] = struct{}{}
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -172,9 +179,24 @@ func (s *Store) CommitReadings(ids []int64, sessionType string, sessionDate stri
 		}
 	}()
 
+	args := []any{sessionType, sessionDate, ids[0], ids[1], ids[2]}
+	var valid int
+	err = tx.QueryRow(
+		`SELECT COUNT(*) FROM readings
+		 WHERE session_type = ? AND session_date = ?
+		   AND review_status = 'pending' AND id IN (?, ?, ?)`,
+		args...,
+	).Scan(&valid)
+	if err != nil {
+		return err
+	}
+	if valid != len(ids) {
+		return fmt.Errorf("expected 3 pending readings for %s %s, found %d", sessionType, sessionDate, valid)
+	}
+
 	// Commit the specified readings
 	for _, id := range ids {
-		_, err = tx.Exec(`UPDATE readings SET review_status = 'committed' WHERE id = ?`, id)
+		_, err = tx.Exec(`UPDATE readings SET review_status = 'committed' WHERE id = ? AND session_type = ? AND session_date = ? AND review_status = 'pending'`, id, sessionType, sessionDate)
 		if err != nil {
 			return err
 		}
