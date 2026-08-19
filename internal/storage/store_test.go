@@ -288,7 +288,7 @@ func TestGetPendingReadings(t *testing.T) {
 		t.Fatalf("SaveReading(night1) returned error: %v", err)
 	}
 
-	readings, err := store.GetPendingReadings("morning")
+	readings, err := store.GetPendingReadings("morning", "2026-08-18")
 	if err != nil {
 		t.Fatalf("GetPendingReadings returned error: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestCommitReadings(t *testing.T) {
 		t.Fatalf("SaveReading(morning4) returned error: %v", err)
 	}
 
-	store.CommitReadings([]int64{r1, r2, r3}, "morning")
+	store.CommitReadings([]int64{r1, r2, r3}, "morning", "2026-08-18")
 	r, err := store.GetReading(r1)
 	if err != nil {
 		t.Fatalf("GetReading(r1) returned error: %v", err)
@@ -431,23 +431,16 @@ func TestCommitReadings(t *testing.T) {
 		t.Errorf("GetReading(r4) = %v, want nil", r)
 	}
 
-	pending, err := store.GetPendingReadings("morning")
+	pending, err := store.GetPendingReadings("morning", "2026-08-18")
 	if err != nil {
-		t.Fatalf("GetPendingReadings(\"morning\") returned error: %v", err)
+		t.Fatalf("GetPendingReadings(\"morning\", \"2026-08-18\") returned error: %v", err)
 	}
 	if len(pending) != 0 {
-		t.Errorf("GetPendingReadings(\"morning\") = %v, want empty slice", pending)
+		t.Errorf("GetPendingReadings(\"morning\", \"2026-08-18\") = %v, want empty slice", pending)
 	}
 }
 
 func TestCommitReadings_WrongCount(t *testing.T) {
-	/*
-			TestCommitReadings_WrongCount:
-		- Save 2 "morning" pending readings
-		- Call CommitReadings with only 1 id (or 2, or 4 — anything ≠ 3)
-		- Assert an error comes back
-		- Assert nothing changed — GetPendingReadings("morning") still shows both readings, still "pending". This is the part that actually proves the validation happens before any mutation, not that it just happens to error out partway through leaving a half-committed mess.
-	*/
 	store, err := Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open returned error: %v", err)
@@ -480,14 +473,14 @@ func TestCommitReadings_WrongCount(t *testing.T) {
 		t.Fatalf("SaveReading(morning2) returned error: %v", err)
 	}
 
-	err = store.CommitReadings([]int64{r1, r2}, "morning")
+	err = store.CommitReadings([]int64{r1, r2}, "morning", "2026-08-18")
 	if err == nil {
 		t.Fatal("CommitReadings with 2 ids returned no error, want an error")
 	}
 
-	readings, err := store.GetPendingReadings("morning")
+	readings, err := store.GetPendingReadings("morning", "2026-08-18")
 	if err != nil {
-		t.Fatalf("GetPendingReadings returned error: %v", err)
+		t.Fatalf("GetPendingReadings(\"morning\", \"2026-08-18\") returned error: %v", err)
 	}
 	if len(readings) != 2 {
 		t.Errorf("got %d pending readings after rejected commit, want 2 (nothing should have changed)", len(readings))
@@ -507,5 +500,128 @@ func TestSessionTypeFor(t *testing.T) {
 	sessionType = SessionTypeFor(t2)
 	if sessionType != "morning" {
 		t.Errorf("SessionTypeFor(%v) = %q, want %q", t2, sessionType, "morning")
+	}
+}
+
+func TestSessionDateFor(t *testing.T) {
+	// August 18, 2026, 1am
+	t1 := time.Date(2026, 8, 18, 1, 0, 0, 0, time.Local)
+	expected := "2026-08-18"
+	sessionDate := SessionDateFor(t1)
+	if sessionDate != expected {
+		t.Errorf("SessionDateFor(%v) = %q, want %q", t1, sessionDate, expected)
+	}
+
+	// Same day, 9am - night + morning readings should share the same date
+	t2 := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+	sessionDate = SessionDateFor(t2)
+	if sessionDate != expected {
+		t.Errorf("SessionDateFor(%v) = %q, want %q", t2, sessionDate, expected)
+	}
+
+	// Single-digit month/day - confirms zero-padding
+	t3 := time.Date(2026, 9, 5, 10, 0, 0, 0, time.Local)
+	expected3 := "2026-09-05"
+	sessionDate = SessionDateFor(t3)
+	if sessionDate != expected3 {
+		t.Errorf("SessionDateFor(%v) = %q, want %q", t3, sessionDate, expected3)
+	}
+}
+
+func TestGetPendingSessions(t *testing.T) {
+	store, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open returned error: %v", err)
+	}
+	if store == nil {
+		t.Fatal("Open returned nil store")
+	}
+	defer store.Close()
+
+	userSlot := 2
+	deviceTime1 := uint32(1)
+	deviceTime2 := uint32(2)
+	deviceTime3 := uint32(3)
+	deviceTime4 := uint32(4)
+	deviceTime5 := uint32(5)
+	deviceTime6 := uint32(6)
+	deviceTime7 := uint32(7)
+	deviceTime8 := uint32(8)
+
+	morning1 := a6session.Reading{
+		Systolic: 120, Diastolic: 80, MeanPressure: 93, Pulse: 70, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime1,
+	}
+	morning2 := a6session.Reading{
+		Systolic: 122, Diastolic: 81, MeanPressure: 94, Pulse: 72, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime2,
+	}
+	morning3 := a6session.Reading{
+		Systolic: 130, Diastolic: 90, MeanPressure: 103, Pulse: 75, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime3,
+	}
+
+	morning4 := a6session.Reading{
+		Systolic: 135, Diastolic: 95, MeanPressure: 108, Pulse: 78, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime4,
+	}
+	morning5 := a6session.Reading{
+		Systolic: 140, Diastolic: 100, MeanPressure: 113, Pulse: 80, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime5,
+	}
+	morning6 := a6session.Reading{
+		Systolic: 145, Diastolic: 105, MeanPressure: 118, Pulse: 82, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime6,
+	}
+	morning7 := a6session.Reading{
+		Systolic: 150, Diastolic: 110, MeanPressure: 123, Pulse: 85, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime7,
+	}
+	morning8 := a6session.Reading{
+		Systolic: 155, Diastolic: 115, MeanPressure: 128, Pulse: 88, Status: 0,
+		UserSlot: &userSlot, DeviceTime: &deviceTime8,
+	}
+
+	morningTime := time.Date(2026, 8, 18, 9, 0, 0, 0, time.Local)
+	morningTime2 := time.Date(2026, 8, 19, 10, 0, 0, 0, time.Local)
+
+	if _, err := store.SaveReading(morning1, morningTime); err != nil {
+		t.Fatalf("SaveReading(morning1) returned error: %v", err)
+	}
+	if _, err := store.SaveReading(morning2, morningTime.Add(time.Minute)); err != nil {
+		t.Fatalf("SaveReading(morning2) returned error: %v", err)
+	}
+	if _, err := store.SaveReading(morning3, morningTime.Add(2*time.Minute)); err != nil {
+		t.Fatalf("SaveReading(morning3) returned error: %v", err)
+	}
+	if _, err := store.SaveReading(morning4, morningTime.Add(3*time.Minute)); err != nil {
+		t.Fatalf("SaveReading(morning4) returned error: %v", err)
+	}
+
+	if _, err := store.SaveReading(morning5, morningTime2.Add(time.Minute)); err != nil {
+		t.Fatalf("SaveReading(morning5) returned error: %v", err)
+	}
+	if _, err := store.SaveReading(morning6, morningTime2.Add(2*time.Minute)); err != nil {
+		t.Fatalf("SaveReading(morning6) returned error: %v", err)
+	}
+	if _, err := store.SaveReading(morning7, morningTime2.Add(3*time.Minute)); err != nil {
+		t.Fatalf("SaveReading(morning7) returned error: %v", err)
+	}
+	if _, err := store.SaveReading(morning8, morningTime2.Add(4*time.Minute)); err != nil {
+		t.Fatalf("SaveReading(morning8) returned error: %v", err)
+	}
+
+	pending, err := store.GetPendingSessions()
+	if err != nil {
+		t.Fatalf("GetPendingSessions() returned error: %v", err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("Expected 2 pending sessions, got %d", len(pending))
+	}
+	if pending[0].SessionType != "morning" || pending[0].SessionDate != "2026-08-18" {
+		t.Errorf("pending[0] = %+v, want {morning 2026-08-18}", pending[0])
+	}
+	if pending[1].SessionType != "morning" || pending[1].SessionDate != "2026-08-19" {
+		t.Errorf("pending[1] = %+v, want {morning 2026-08-19}", pending[1])
 	}
 }

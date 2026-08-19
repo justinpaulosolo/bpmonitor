@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS readings (
     user_slot      INTEGER,
     device_time    INTEGER,
     session_type   TEXT NOT NULL,
+	session_date   TEXT NOT NULL,
     review_status  TEXT NOT NULL DEFAULT 'pending'
 );`
 
@@ -51,6 +52,7 @@ func (s *Store) Close() error {
 
 func (s *Store) SaveReading(r a6session.Reading, t time.Time) (int64, error) {
 	sessionType := SessionTypeFor(t)
+	sessionDate := SessionDateFor(t)
 	t = t.UTC()
 	if r.DeviceTime != nil {
 		query := `SELECT id FROM readings WHERE device_time = ?`
@@ -64,8 +66,8 @@ func (s *Store) SaveReading(r a6session.Reading, t time.Time) (int64, error) {
 		}
 	}
 	result, err := s.db.Exec(
-		`INSERT INTO readings (recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO readings (recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, session_date)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		t,
 		r.Systolic,
 		r.Diastolic,
@@ -75,6 +77,7 @@ func (s *Store) SaveReading(r a6session.Reading, t time.Time) (int64, error) {
 		r.UserSlot,
 		r.DeviceTime,
 		sessionType,
+		sessionDate,
 	)
 	if err != nil {
 		return 0, err
@@ -87,7 +90,7 @@ func (s *Store) SaveReading(r a6session.Reading, t time.Time) (int64, error) {
 }
 
 func (s *Store) GetReading(id int64) (*StoredReading, error) {
-	row := s.db.QueryRow(`SELECT id, recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, review_status FROM readings WHERE id = ?`, id)
+	row := s.db.QueryRow(`SELECT id, recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, session_date, review_status FROM readings WHERE id = ?`, id)
 	r, err := scanReading(row)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -99,7 +102,7 @@ func (s *Store) GetReading(id int64) (*StoredReading, error) {
 }
 
 func (s *Store) GetReadings() ([]StoredReading, error) {
-	rows, err := s.db.Query(`SELECT id, recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, review_status FROM readings ORDER BY recorded_at`)
+	rows, err := s.db.Query(`SELECT id, recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, session_date, review_status FROM readings ORDER BY recorded_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -119,8 +122,8 @@ func (s *Store) GetReadings() ([]StoredReading, error) {
 	return readings, nil
 }
 
-func (s *Store) GetPendingReadings(sessionType string) ([]StoredReading, error) {
-	rows, err := s.db.Query(`SELECT id, recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, review_status FROM readings WHERE session_type = ? AND review_status = 'pending' ORDER BY recorded_at`, sessionType)
+func (s *Store) GetPendingReadings(sessionType string, sessionDate string) ([]StoredReading, error) {
+	rows, err := s.db.Query(`SELECT id, recorded_at, systolic, diastolic, mean_pressure, pulse, status, user_slot, device_time, session_type, session_date, review_status FROM readings WHERE session_type = ? AND session_date = ? AND review_status = 'pending' ORDER BY recorded_at`, sessionType, sessionDate)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +148,7 @@ func (s *Store) DeleteReading(id int64) error {
 	return err
 }
 
-func (s *Store) CommitReadings(ids []int64, sessionType string) (err error) {
+func (s *Store) CommitReadings(ids []int64, sessionType string, sessionDate string) (err error) {
 	if len(ids) != 3 {
 		return fmt.Errorf("expected 3 ids to commit, got %d", len(ids))
 	}
@@ -168,13 +171,38 @@ func (s *Store) CommitReadings(ids []int64, sessionType string) (err error) {
 	}
 
 	// Delete the rest of the readings for the session type
-	_, err = tx.Exec(`DELETE FROM readings WHERE session_type = ? AND review_status = 'pending'`, sessionType)
+
+	_, err = tx.Exec(`DELETE FROM readings WHERE session_type = ? AND session_date = ? AND review_status = 'pending'`, sessionType, sessionDate)
 	if err != nil {
 		return err
 	}
 
 	err = tx.Commit()
 	return
+}
+
+func (s *Store) GetPendingSessions() ([]PendingSession, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT session_type, session_date FROM readings WHERE review_status = 'pending' ORDER BY session_date, session_type`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sessions []PendingSession
+	for rows.Next() {
+		var sessionType, sessionDate string
+		if err := rows.Scan(&sessionType, &sessionDate); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, PendingSession{
+			SessionType: sessionType,
+			SessionDate: sessionDate,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sessions, nil
 }
 
 func SessionTypeFor(t time.Time) string {
@@ -185,12 +213,17 @@ func SessionTypeFor(t time.Time) string {
 	return "morning"
 }
 
+func SessionDateFor(t time.Time) string {
+	t = t.Local()
+	return fmt.Sprintf("%04d-%02d-%02d", t.Year(), t.Month(), t.Day())
+}
+
 func scanReading(row rowScanner) (StoredReading, error) {
 	var r StoredReading
 	var recordedAt time.Time
 	err := row.Scan(
 		&r.ID, &recordedAt, &r.Systolic, &r.Diastolic, &r.MeanPressure,
-		&r.Pulse, &r.Status, &r.UserSlot, &r.DeviceTime, &r.SessionType, &r.ReviewStatus,
+		&r.Pulse, &r.Status, &r.UserSlot, &r.DeviceTime, &r.SessionType, &r.SessionDate, &r.ReviewStatus,
 	)
 	if err != nil {
 		return StoredReading{}, err
