@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/justinpaulosolo/bpmonitor/internal/storage"
 )
@@ -35,6 +38,10 @@ func (m Model) Init() tea.Cmd {
 	}
 }
 
+func NewModel(store *storage.Store) Model {
+	return Model{store: store, screen: screenQueue}
+}
+
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case pendingSessionsLoadedMsg:
@@ -62,5 +69,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) View() tea.View {
-	return tea.NewView("")
+	if m.currentSession == nil {
+		return tea.NewView("No pending readings.\n\nq to quit")
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s — %s (%d pending)\n\n", m.currentSession.SessionType, m.currentSession.SessionDate, len(m.pending))
+	for _, r := range m.pending {
+		fmt.Fprintf(&b, "#%d  %d/%d  pulse %d\n", r.ID, r.Systolic, r.Diastolic, r.Pulse)
+	}
+	b.WriteString("\nq to quit")
+	return tea.NewView(b.String())
 }
