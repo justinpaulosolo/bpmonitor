@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/table"
@@ -27,6 +28,8 @@ const chartHeight = 12
 // included — lipgloss Width/Height are total dimensions, so Height(3) yields a
 // 3-line box with 1 line of content between its two border rows.
 const trendsSummaryLines = 3
+
+const sessionLabelWidth = 7
 
 // trendsTableHeight returns how much of the panel's *content* area is left for
 // the readings table once the fixed-height chart, the summary block, and the
@@ -76,29 +79,24 @@ func newCommittedTable(width, height int) table.Model {
 	s := table.DefaultStyles()
 	s.Header = s.Header.
 		BorderStyle(lipgloss.NormalBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(colorBorder).
 		BorderBottom(true).
+		Foreground(colorAccent).
 		Bold(true)
+	s.Cell = s.Cell.Foreground(colorText)
 	s.Selected = s.Selected.
-		Foreground(lipgloss.Color("229")).
-		Background(lipgloss.Color("57")).
+		Foreground(colorSelectedFg).
+		Background(colorSelectedBg).
 		Bold(false)
 	t.SetStyles(s)
 	return t
-}
-
-func sessionEmoji(sessionType string) string {
-	if sessionType == filterNight {
-		return "🌙"
-	}
-	return "☀️"
 }
 
 func committedRows(committed []storage.StoredReading) []table.Row {
 	rows := make([]table.Row, len(committed))
 	for i, r := range committed {
 		rows[i] = table.Row{
-			fmt.Sprintf("%s  %s", sessionEmoji(r.SessionType), r.SessionDate),
+			fmt.Sprintf("%-*s  %s", sessionLabelWidth, strings.ToUpper(r.SessionType), r.SessionDate),
 			fmt.Sprintf("%d", r.Systolic),
 			fmt.Sprintf("%d", r.Diastolic),
 			fmt.Sprintf("%d", r.Pulse),
@@ -153,8 +151,8 @@ func buildTrendsChart(committed []storage.StoredReading, width, height int) time
 		timeserieslinechart.WithTimeRange(minT, maxT),
 		timeserieslinechart.WithYRange(minY-5, maxY+5),
 	)
-	chart.SetDataSetStyle("systolic", lipgloss.NewStyle().Foreground(lipgloss.Color("205")))
-	chart.SetDataSetStyle("diastolic", lipgloss.NewStyle().Foreground(lipgloss.Color("39")))
+	chart.SetDataSetStyle("systolic", lipgloss.NewStyle().Foreground(colorSystolic))
+	chart.SetDataSetStyle("diastolic", lipgloss.NewStyle().Foreground(colorDiastolic))
 	for _, r := range committed {
 		t, err := time.Parse("2006-01-02", r.SessionDate)
 		if err != nil {
@@ -171,17 +169,17 @@ func buildTrendsChart(committed []storage.StoredReading, width, height int) time
 // exactly trendsSummaryLines lines tall regardless of data — the panel height
 // budgeting depends on that.
 func trendsSummary(committed []storage.StoredReading, filter string, width int) string {
-	label := "All readings"
+	label := "ALL READINGS"
 	switch filter {
 	case filterMorning:
-		label = sessionEmoji(filterMorning) + "  Mornings"
+		label = "DAY"
 	case filterNight:
-		label = sessionEmoji(filterNight) + "  Nights"
+		label = "NIGHTS"
 	}
 
-	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("205"))
-	statStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229"))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	labelStyle := lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
+	statStyle := lipgloss.NewStyle().Bold(true).Foreground(colorStat)
+	dimStyle := lipgloss.NewStyle().Foreground(colorTextDim)
 
 	var body string
 	if len(committed) == 0 {
@@ -196,15 +194,15 @@ func trendsSummary(committed []storage.StoredReading, filter string, width int) 
 		n := len(committed)
 		body = labelStyle.Render(label) + "   " +
 			dimStyle.Render("AVG ") + statStyle.Render(fmt.Sprintf("%d/%d", sysSum/n, diaSum/n)) +
-			dimStyle.Render("   PULSE ") + statStyle.Render(fmt.Sprintf("%d", pulseSum/n)) +
-			dimStyle.Render(fmt.Sprintf("   n=%d", n))
+			dimStyle.Render("   PULSE ") + statStyle.Render(fmt.Sprintf("%d", pulseSum/n))
 	}
 
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(colorBorder).
 		Width(width).
 		Height(trendsSummaryLines).
 		Padding(0, 1).
+		Align(lipgloss.Center).
 		Render(body)
 }

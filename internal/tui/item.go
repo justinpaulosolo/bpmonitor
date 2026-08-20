@@ -17,7 +17,7 @@ func (i readingItem) FilterValue() string { return "" }
 func (i readingItem) Title() string {
 	text := fmt.Sprintf("#%d  %d/%d  pulse %d", i.reading.ID, i.reading.Systolic, i.reading.Diastolic, i.reading.Pulse)
 	if i.rejected {
-		return lipgloss.NewStyle().Strikethrough(true).Render(text)
+		return lipgloss.NewStyle().Strikethrough(true).Foreground(colorRejected).Render(text)
 	}
 	return text
 }

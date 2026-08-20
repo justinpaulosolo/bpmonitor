@@ -57,10 +57,11 @@ func clip(s string, width, height int) string {
 func panelStyle(focused bool, width, height int) lipgloss.Style {
 	style := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorBorder).
 		Width(width).
 		Height(height)
 	if focused {
-		style = style.BorderForeground(lipgloss.Color("205"))
+		style = style.BorderForeground(colorBorderFocus)
 	}
 	return style
 }
@@ -82,12 +83,15 @@ func (m Model) View() tea.View {
 	right := panelStyle(m.focus == focusTrends, rightWidth, ph).
 		Render(clip(rightBody, contentWidth(rightWidth), contentHeight(ph)))
 
-	footerText := "↑↓ move · x reject · u undo · c commit · D abandon · a/m/n filter · tab panel · q quit"
-	if m.err != nil {
-		footerText = fmt.Sprintf("error: %v", m.err) + "\n" + footerText
-	}
+	footerText := lipgloss.NewStyle().Foreground(colorTextDim).
+		Render("↑↓ move · x reject · u undo · c commit · D abandon · a/m/n filter · tab panel · q quit")
 	if len(m.pendingSessions) > 1 {
-		footerText += fmt.Sprintf("   |   %d more sitting(s) pending review", len(m.pendingSessions)-1)
+		footerText += lipgloss.NewStyle().Foreground(colorAccent).
+			Render(fmt.Sprintf("   |   %d more sitting(s) pending review", len(m.pendingSessions)-1))
+	}
+	if m.err != nil {
+		footerText = lipgloss.NewStyle().Foreground(colorError).
+			Render(fmt.Sprintf("error: %v", m.err)) + "\n" + footerText
 	}
 	footer := "\n\n" + lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(footerText)
 

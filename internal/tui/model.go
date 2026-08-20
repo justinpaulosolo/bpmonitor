@@ -278,8 +278,21 @@ func (m *Model) rebuildList() {
 }
 
 func newReadingList(items []list.Item, width, height int) list.Model {
-	l := list.New(items, list.NewDefaultDelegate(), width, height)
+	d := list.NewDefaultDelegate()
+	d.Styles.NormalTitle = d.Styles.NormalTitle.Foreground(colorText)
+	d.Styles.NormalDesc = d.Styles.NormalDesc.Foreground(colorTextDim)
+	d.Styles.SelectedTitle = d.Styles.SelectedTitle.
+		Foreground(colorSelectedFg).BorderForeground(colorBorderFocus)
+	d.Styles.SelectedDesc = d.Styles.SelectedDesc.
+		Foreground(colorTextDim).BorderForeground(colorBorderFocus)
+
+	l := list.New(items, d, width, height)
 	l.SetShowHelp(false)
+	l.Styles.Title = l.Styles.Title.Foreground(colorSelectedFg).Background(colorSelectedBg)
+	l.Styles.PaginationStyle = l.Styles.PaginationStyle.Foreground(colorTextDim)
+	l.Styles.ActivePaginationDot = l.Styles.ActivePaginationDot.Foreground(colorAccent)
+	l.Styles.InactivePaginationDot = l.Styles.InactivePaginationDot.Foreground(colorBorder)
+	l.Styles.NoItems = l.Styles.NoItems.Foreground(colorTextDim)
 	l.AdditionalShortHelpKeys = func() []key.Binding {
 		return []key.Binding{
 			key.NewBinding(key.WithKeys("x"), key.WithHelp("x", "reject")),
