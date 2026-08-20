@@ -1,16 +1,27 @@
-.PHONY: demo test build
+.PHONY: build test vet check run demo seed clean
 
-# Dev convenience: reset bpmonitor.db and reseed it with fixture data, then
-# launch the TUI against it. Lets you iterate on internal/tui without needing
-# the real cuff nearby, and without worrying about having deleted/committed
-# your way through the seeded readings in a previous run.
-demo:
-	rm -f bpmonitor.db
-	go run ./cmd/seed
-	go run ./cmd/bpterm
+build:
+	go build ./...
 
 test:
 	go test ./...
 
-build:
-	go build ./...
+vet:
+	go vet ./...
+
+check: vet test build
+
+run:
+	go run ./cmd/bpterm
+
+demo:
+	rm -f dev.db
+	go run ./cmd/seed -db dev.db
+	go run ./cmd/bpterm -db dev.db
+
+seed:
+	rm -f dev.db
+	go run ./cmd/seed -db dev.db
+
+clean:
+	rm -f dev.db dev.db-journal
