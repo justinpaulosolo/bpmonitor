@@ -3,12 +3,14 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/list"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/linechart/timeserieslinechart"
+	"github.com/justinpaulosolo/bpmonitor/internal/ble"
 	"github.com/justinpaulosolo/bpmonitor/internal/storage"
 )
 
@@ -27,6 +29,8 @@ type Model struct {
 	trendsFilter    string
 	trendsTable     table.Model
 	trendsChart     timeserieslinechart.Model
+	capturing       bool
+	captureStatus   string
 }
 
 type pendingSessionsLoadedMsg []storage.PendingSession
@@ -40,8 +44,12 @@ type committedReadingsLoadedMsg struct {
 	filter   string
 	readings []storage.StoredReading
 }
-
 type Focus int
+type captureEventMsg struct {
+	ch    <-chan ble.CaptureEvent
+	event ble.CaptureEvent
+}
+type readingCaptureMsg struct{}
 
 const (
 	focusQueue Focus = iota
@@ -128,6 +136,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(loadPendingSessions(m.store), loadCommittedReadings(m.store, m.trendsFilter))
 	case sessionAbandonedMsg:
 		return m, loadPendingSessions(m.store)
+	case readingCaptureMsg:
+		m.captureStatus = "saved"
+		return m, loadPendingSessions(m.store)
 	case committedReadingsLoadedMsg:
 		if msg.filter != m.trendsFilter {
 			return m, nil
@@ -137,6 +148,23 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.trendsTable.SetRows(committedRows(m.committed))
 		m.trendsChart = buildTrendsChart(m.committed, contentWidth(rightPanelWidth(m.width)), chartHeight)
 		return m, nil
+	case captureEventMsg:
+		if msg.event.Error != nil {
+			m.capturing = false
+			return m, func() tea.Msg { return errMsg(msg.event.Error) }
+		}
+		if msg.event.Reading != nil {
+			m.capturing = false
+			reading := *msg.event.Reading
+			return m, func() tea.Msg {
+				if _, err := m.store.SaveReading(reading, time.Now()); err != nil {
+					return errMsg(err)
+				}
+				return readingCaptureMsg{}
+			}
+		}
+		m.captureStatus = msg.event.Status
+		return m, listenForCapture(msg.ch)
 	case errMsg:
 		m.err = msg
 		return m, nil
@@ -164,6 +192,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.trendsTable.Blur()
 			}
 			return m, nil
+		case "b":
+			if m.capturing {
+				return m, nil
+			}
+			ch, err := ble.Capture()
+			if err != nil {
+				return m, func() tea.Msg { return errMsg(err) }
+			}
+			m.capturing = true
+			m.captureStatus = "starting"
+			return m, listenForCapture(ch)
 		}
 		if m.focus == focusTrends {
 			switch msg.String() {
@@ -302,4 +341,14 @@ func newReadingList(items []list.Item, width, height int) list.Model {
 		}
 	}
 	return l
+}
+
+func listenForCapture(ch <-chan ble.CaptureEvent) tea.Cmd {
+	return func() tea.Msg {
+		event, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return captureEventMsg{ch: ch, event: event}
+	}
 }

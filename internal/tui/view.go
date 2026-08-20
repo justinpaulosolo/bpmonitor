@@ -93,6 +93,9 @@ func (m Model) View() tea.View {
 		footerText = lipgloss.NewStyle().Foreground(colorError).
 			Render(fmt.Sprintf("error: %v", m.err)) + "\n" + footerText
 	}
+	if m.capturing {
+		footerText += lipgloss.NewStyle().Foreground(colorAccent).Render(fmt.Sprintf("   |   capture: %s", m.captureStatus))
+	}
 	footer := "\n\n" + lipgloss.NewStyle().Width(m.width).Align(lipgloss.Center).Render(footerText)
 
 	v := tea.NewView(lipgloss.JoinHorizontal(lipgloss.Top, left, right) + footer)
