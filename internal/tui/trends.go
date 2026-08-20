@@ -63,10 +63,11 @@ func committedColumns(width int) []table.Column {
 		rest = 5
 	}
 	return []table.Column{
-		{Title: "When", Width: whenW},
-		{Title: "Sys", Width: rest},
-		{Title: "Dia", Width: rest},
-		{Title: "Pulse", Width: usable - whenW - 2*rest},
+		{Title: "WHEN", Width: rest},
+		{Title: "DATE", Width: rest},
+		{Title: "SYSTOLIC", Width: rest},
+		{Title: "DIASTOLIC", Width: rest},
+		{Title: "PULSE", Width: usable - whenW - 2*rest},
 	}
 }
 
@@ -96,7 +97,8 @@ func committedRows(committed []storage.StoredReading) []table.Row {
 	rows := make([]table.Row, len(committed))
 	for i, r := range committed {
 		rows[i] = table.Row{
-			fmt.Sprintf("%-*s  %s", sessionLabelWidth, strings.ToUpper(r.SessionType), r.SessionDate),
+			fmt.Sprintf("%s", strings.ToUpper(r.SessionType)),
+			fmt.Sprintf("%s", r.SessionDate),
 			fmt.Sprintf("%d", r.Systolic),
 			fmt.Sprintf("%d", r.Diastolic),
 			fmt.Sprintf("%d", r.Pulse),
