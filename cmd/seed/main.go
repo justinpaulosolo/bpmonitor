@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 //     queue screen: a morning sitting with 4 readings (reject down to 3),
 //     and a night sitting with exactly 1 reading (the "D" abandon-sitting case).
 func main() {
-	store, err := storage.Open("bpmonitor.db")
+	dbPath := flag.String("db", "bpmonitor.db", "path to the sqlite database")
+	flag.Parse()
+	store, err := storage.Open(*dbPath)
 	if err != nil {
 		panic(err)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 
@@ -10,7 +11,10 @@ import (
 )
 
 func main() {
-	store, err := storage.Open("bpmonitor.db")
+	dbPath := flag.String("db", "bpmonitor.db", "path to the sqlite database")
+	flag.Parse()
+
+	store, err := storage.Open(*dbPath)
 	if err != nil {
 		fmt.Println("failed to open storage:", err)
 		os.Exit(1)
